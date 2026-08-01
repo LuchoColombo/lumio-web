@@ -145,6 +145,37 @@
     }
   }
 
+  // Arbitrary files go out as-is (type 'f', filename embedded). Every KB
+  // costs ~2 QR codes, so big files belong to the Wi-Fi flow instead.
+  const FILE_WARN_SIZE = 100 * 1024;
+  const FILE_MAX_SIZE = 512 * 1024;
+
+  async function handlePickAnyFile(file) {
+    $('sendErr').textContent = '';
+    if (file.size > FILE_MAX_SIZE) {
+      $('sendErr').textContent =
+        'Ese archivo es muy pesado para QR (máx. 512 KB). Usá la opción de ' +
+        'Wi-Fi: en el celu, Lumio → Recibir desde la compu.';
+      return;
+    }
+    if (file.size > FILE_WARN_SIZE) {
+      const mins = Math.ceil((Math.ceil(file.size / 420) * 1.5 * 0.3) / 60);
+      const ok = window.confirm(
+        'El archivo pesa ' + Math.round(file.size / 1024) + ' KB: la transferencia ' +
+        'puede tardar ~' + mins + ' min. ¿Transmitir igual?',
+      );
+      if (!ok) return;
+    }
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const packed = OT2.packFilePayload(file.name, buf);
+      const enc = await OT2.createFountainEncoder(packed, 'f');
+      startTransmission({ frameAt: enc.frameAt, cycleLength: enc.cycleLength, isPlain: false });
+    } catch (e) {
+      $('sendErr').textContent = 'No se pudo leer el archivo.';
+    }
+  }
+
   // ============ RECEIVER ============
 
   let stream = null;
@@ -263,10 +294,27 @@
       return;
     }
 
-    if (raw.startsWith('OT:')) return; // legacy animated frame, ignore
+    // Unparseable OT2 frame (newer protocol?): don't treat it as plain text.
+    if (raw.startsWith('OT2:') || raw.startsWith('OT:')) return;
 
     stopScan();
     showResult({ type: 't', bytes: new TextEncoder().encode(raw) });
+  }
+
+  const MIME_BY_EXT = {
+    pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+    gif: 'image/gif', webp: 'image/webp', mp4: 'video/mp4', mp3: 'audio/mpeg',
+    txt: 'text/plain', csv: 'text/csv', json: 'application/json', zip: 'application/zip',
+    apk: 'application/vnd.android.package-archive',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  };
+
+  function mimeForName(name) {
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    return MIME_BY_EXT[ext] || 'application/octet-stream';
   }
 
   function showResult(result) {
@@ -295,13 +343,33 @@
         $('btnOpen').href = trimmed;
         $('btnOpen').hidden = false;
       }
-    } else {
+    } else if (result.type === 'i') {
       const blob = new Blob([result.bytes], { type: 'image/jpeg' });
       const url = URL.createObjectURL(blob);
       $('resultImg').src = url;
       $('resultImg').hidden = false;
       $('btnDownload').href = url;
       $('btnDownload').download = 'lumio-imagen.jpg';
+      $('btnDownload').textContent = 'Descargar imagen';
+      $('btnDownload').hidden = false;
+    } else {
+      // File: unpack name + bytes and hand it straight to the browser's
+      // download machinery. On a phone it lands in Descargas.
+      const unpacked = OT2.unpackFilePayload(result.bytes);
+      const name = unpacked.name || 'lumio-archivo.bin';
+      const mime = mimeForName(name);
+      const blob = new Blob([unpacked.bytes], { type: mime });
+      const url = URL.createObjectURL(blob);
+      $('resultText').textContent =
+        '📄 ' + name + ' • ' + (unpacked.bytes.length / 1024).toFixed(1) + ' KB';
+      $('resultText').hidden = false;
+      if (mime.startsWith('image/')) {
+        $('resultImg').src = url;
+        $('resultImg').hidden = false;
+      }
+      $('btnDownload').href = url;
+      $('btnDownload').download = name;
+      $('btnDownload').textContent = 'Descargar ' + name;
       $('btnDownload').hidden = false;
     }
     show('result');
@@ -334,6 +402,12 @@
     const file = e.target.files && e.target.files[0];
     e.target.value = '';
     if (file) handlePickImage(file);
+  };
+  $('btnPickFile').onclick = () => $('anyFileInput').click();
+  $('anyFileInput').onchange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (file) handlePickAnyFile(file);
   };
   $('btnStopTx').onclick = () => {
     stopTransmission();

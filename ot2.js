@@ -98,6 +98,26 @@
     return btoa(bin);
   }
 
+  // File payloads (type 'f') embed their name:
+  // [2-byte BE name length][name utf8][file bytes]
+  function packFilePayload(name, bytes) {
+    const nameBytes = utf8Encode(name).slice(0, 255);
+    const out = new Uint8Array(2 + nameBytes.length + bytes.length);
+    out[0] = nameBytes.length >> 8;
+    out[1] = nameBytes.length & 0xff;
+    out.set(nameBytes, 2);
+    out.set(bytes, 2 + nameBytes.length);
+    return out;
+  }
+
+  function unpackFilePayload(payload) {
+    const nameLen = (payload[0] << 8) | payload[1];
+    return {
+      name: utf8Decode(payload.slice(2, 2 + nameLen)),
+      bytes: payload.slice(2 + nameLen),
+    };
+  }
+
   function parseFountainFrame(raw) {
     if (!raw.startsWith('OT2:')) return null;
     const parts = raw.split(':');
@@ -112,7 +132,7 @@
     const type = flags[0];
     const compressed = flags.length > 1 && flags[1] === 'z';
     if (!sid || isNaN(k) || isNaN(len) || isNaN(crc) || isNaN(seed)) return null;
-    if (type !== 't' && type !== 'i') return null;
+    if (type !== 't' && type !== 'i' && type !== 'f') return null;
 
     try {
       const data = b64ToBytes(parts[7]);
@@ -302,6 +322,8 @@
     parseFountainFrame,
     FountainDecoder,
     createFountainEncoder,
+    packFilePayload,
+    unpackFilePayload,
     utf8Decode,
     utf8Encode,
     BLOCK_SIZE,

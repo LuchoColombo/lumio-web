@@ -79,6 +79,7 @@
     <div class="spacer"></div>
     <button id="btnGoSend" class="btn">📤 Enviar desde esta compu</button>
     <button id="btnStart" class="btn secondary">📥 Recibir con la cámara</button>
+    <a class="btn secondary" href="lumio.apk" download>⬇️ Descargar la app (Android)</a>
     <p class="hint">
       Todo viaja por luz entre pantalla y cámara: nada pasa por internet ni por servidores.
     </p>
@@ -102,6 +103,23 @@
     <div class="rowBetween"><span class="label">Imagen</span></div>
     <button id="btnPickImage" class="btn secondary">Elegir imagen</button>
     <input id="fileInput" type="file" accept="image/*" hidden />
+    <div class="divider">o</div>
+    <div class="rowBetween"><span class="label">Archivo</span></div>
+    <button id="btnPickFile" class="btn secondary">Elegir archivo (PDF, etc.)</button>
+    <input id="anyFileInput" type="file" hidden />
+    <p class="hint" style="margin-top:10px">
+      Archivos chicos (hasta ~100 KB). En el celu: Lumio → Recibir, y al terminar
+      lo guardás donde quieras.
+    </p>
+    <div class="divider">o</div>
+    <div class="rowBetween"><span class="label">Video o archivo grande</span></div>
+    <p class="hint" style="text-align:left; margin-top:10px">
+      Los videos son demasiado pesados para el QR, pero viajan por Wi-Fi local sin
+      internet: en el celu abrí <b style="color:#4ecdc4">Lumio → 💻 Recibir desde la compu</b>,
+      y entrá acá a la dirección que muestra el teléfono (algo como
+      <b style="color:#4ecdc4">http://192.168.…</b>). Desde esa página subís el video
+      o cualquier archivo grande directo al celu.
+    </p>
     <p id="sendErr" class="err"></p>
   </section>
 
@@ -141,7 +159,7 @@
     <img id="resultImg" hidden alt="Imagen recibida" />
     <button id="btnCopy" class="btn" hidden>Copiar texto</button>
     <a id="btnOpen" class="btn" hidden target="_blank" rel="noopener">Abrir link</a>
-    <a id="btnDownload" class="btn" hidden>Descargar imagen</a>
+    <a id="btnDownload" class="btn" hidden>Descargar</a>
     <div class="spacer"></div>
     <button id="btnAgain" class="btn secondary">Recibir otra cosa</button>
   </section>
