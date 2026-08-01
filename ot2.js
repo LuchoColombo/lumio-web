@@ -81,6 +81,23 @@
     return new Uint8Array(buf);
   }
 
+  async function deflateRaw(bytes) {
+    const cs = new CompressionStream('deflate-raw');
+    const stream = new Blob([bytes]).stream().pipeThrough(cs);
+    const buf = await new Response(stream).arrayBuffer();
+    return new Uint8Array(buf);
+  }
+
+  function utf8Encode(str) {
+    return new TextEncoder().encode(str);
+  }
+
+  function bytesToB64(bytes) {
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+
   function parseFountainFrame(raw) {
     if (!raw.startsWith('OT2:')) return null;
     const parts = raw.split(':');
@@ -213,7 +230,82 @@
     }
   }
 
-  const OT2 = { parseFountainFrame, FountainDecoder, utf8Decode, BLOCK_SIZE };
+  // --- encoder (mirror of the app's FountainEncoder in fountain.ts) ---
+  // `bytes` are the raw payload bytes (UTF-8 text, or image file bytes);
+  // `type` is 't' | 'i'. Compression is applied only when it helps.
+  const REPAIR_RATIO = 0.5;
+  const MIN_REPAIR = 4;
+
+  async function createFountainEncoder(rawBytes, type) {
+    let bytes = rawBytes;
+    let compressed = false;
+    try {
+      const deflated = await deflateRaw(rawBytes);
+      if (deflated.length < rawBytes.length) {
+        bytes = deflated;
+        compressed = true;
+      }
+    } catch (e) {
+      // uncompressed fallback
+    }
+
+    const flags = type + (compressed ? 'z' : '');
+    const k = Math.max(1, Math.ceil(bytes.length / BLOCK_SIZE));
+
+    const blocks = [];
+    for (let i = 0; i < k; i++) {
+      const block = new Uint8Array(BLOCK_SIZE);
+      block.set(bytes.slice(i * BLOCK_SIZE, (i + 1) * BLOCK_SIZE));
+      blocks.push(block);
+    }
+
+    const sid = Math.random().toString(36).slice(2, 7);
+    const headerPrefix = 'OT2:' + sid + ':' + k + ':' + bytes.length + ':' + crc32(bytes).toString(36);
+
+    const firstCycleRepairs = [];
+    let maxSeed = k - 1;
+    if (k > 1) {
+      const minRepairs = Math.max(MIN_REPAIR, Math.ceil(k * REPAIR_RATIO));
+      const uncovered = new Set(Array.from({ length: k }, (_, i) => i));
+      for (let seed = k; firstCycleRepairs.length < minRepairs || uncovered.size > 0; seed++) {
+        const indices = frameIndices(seed, k);
+        if (firstCycleRepairs.length >= minRepairs && !indices.some((i) => uncovered.has(i)))
+          continue;
+        firstCycleRepairs.push(seed);
+        for (const i of indices) uncovered.delete(i);
+        maxSeed = seed;
+      }
+    }
+    const freshSeedBase = maxSeed + 1;
+    const cycleLength = k + firstCycleRepairs.length;
+
+    function frameAt(i) {
+      const cycle = Math.floor(i / cycleLength);
+      const pos = i % cycleLength;
+
+      let seed;
+      if (pos < k) seed = pos;
+      else if (cycle === 0) seed = firstCycleRepairs[pos - k];
+      else seed = freshSeedBase + (cycle - 1) * (cycleLength - k) + (pos - k);
+
+      const data = new Uint8Array(BLOCK_SIZE);
+      for (const idx of frameIndices(seed, k)) {
+        xorInto(data, blocks[idx]);
+      }
+      return headerPrefix + ':' + seed + ':' + flags + ':' + bytesToB64(data);
+    }
+
+    return { k, cycleLength, frameAt };
+  }
+
+  const OT2 = {
+    parseFountainFrame,
+    FountainDecoder,
+    createFountainEncoder,
+    utf8Decode,
+    utf8Encode,
+    BLOCK_SIZE,
+  };
   if (typeof module !== 'undefined' && module.exports) module.exports = OT2;
   else global.OT2 = OT2;
 })(typeof window !== 'undefined' ? window : this);
