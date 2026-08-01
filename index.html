@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <title>Lumio — Recibir</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      background: #0a0a0a;
+      color: #fff;
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .screen { display: none; flex-direction: column; align-items: center; width: 100%; max-width: 480px; padding: 24px; flex: 1; }
+    .screen.active { display: flex; }
+    .logo { color: #4ecdc4; font-weight: 900; font-size: 40px; letter-spacing: 4px; margin-top: 48px; }
+    .tagline { color: #888; font-size: 15px; margin-top: 10px; text-align: center; line-height: 1.5; }
+    .btn {
+      background: #4ecdc4; color: #000; border: 0; border-radius: 12px;
+      padding: 16px 24px; font-size: 16px; font-weight: 700; cursor: pointer;
+      width: 100%; margin-top: 16px;
+    }
+    .btn.secondary { background: transparent; color: #4ecdc4; border: 2px solid #4ecdc4; }
+    .spacer { flex: 1; }
+    .hint { color: #666; font-size: 13px; margin-top: 20px; text-align: center; line-height: 1.5; }
+    /* scan */
+    #videoWrap { position: relative; width: 100%; border-radius: 16px; overflow: hidden; margin-top: 24px; background: #111; }
+    #video { width: 100%; display: block; }
+    #frameGuide {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none;
+    }
+    #frameGuide div { width: 60%; aspect-ratio: 1; border: 2px solid #4ecdc4; border-radius: 16px; }
+    .progressBar { width: 100%; height: 8px; background: #1a1a1a; border-radius: 4px; overflow: hidden; margin-top: 20px; }
+    .progressFill { height: 100%; width: 0%; background: #4ecdc4; border-radius: 4px; transition: width .2s; }
+    #scanStatus { color: #999; font-size: 14px; margin-top: 10px; text-align: center; }
+    /* result */
+    .badge { background: #1a3a2a; color: #4ecdc4; border-radius: 12px; padding: 12px 20px; font-weight: 600; margin-top: 32px; }
+    #resultText {
+      background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 16px;
+      margin-top: 20px; width: 100%; white-space: pre-wrap; word-break: break-word;
+      font-size: 15px; max-height: 40vh; overflow-y: auto;
+    }
+    #resultImg { max-width: 100%; border-radius: 12px; margin-top: 20px; background: #1a1a1a; }
+    a.btn { display: block; text-align: center; text-decoration: none; }
+    .err { color: #e05c5c; font-size: 14px; margin-top: 16px; text-align: center; }
+  </style>
+</head>
+<body>
+  <!-- Inicio -->
+  <section id="screen-start" class="screen active">
+    <div class="logo">lumio</div>
+    <p class="tagline">Recibí lo que te están compartiendo,<br />sin instalar nada.</p>
+    <div class="spacer"></div>
+    <button id="btnStart" class="btn">Recibir con la cámara</button>
+    <p class="hint">
+      Apuntá la cámara al código que se mueve en la pantalla de la otra persona.
+      Todo viaja por luz entre las dos pantallas: nada pasa por internet ni por servidores.
+    </p>
+    <p id="startErr" class="err"></p>
+  </section>
+
+  <!-- Escaneo -->
+  <section id="screen-scan" class="screen">
+    <div id="videoWrap">
+      <video id="video" playsinline muted></video>
+      <div id="frameGuide"><div></div></div>
+    </div>
+    <div class="progressBar"><div id="progressFill" class="progressFill"></div></div>
+    <p id="scanStatus">Buscando el código...</p>
+    <div class="spacer"></div>
+    <button id="btnCancel" class="btn secondary">Cancelar</button>
+  </section>
+
+  <!-- Resultado -->
+  <section id="screen-result" class="screen">
+    <div class="badge">Transferencia completa</div>
+    <div id="resultText" hidden></div>
+    <img id="resultImg" hidden alt="Imagen recibida" />
+    <button id="btnCopy" class="btn" hidden>Copiar texto</button>
+    <a id="btnOpen" class="btn" hidden target="_blank" rel="noopener">Abrir link</a>
+    <a id="btnDownload" class="btn" hidden>Descargar imagen</a>
+    <div class="spacer"></div>
+    <button id="btnAgain" class="btn secondary">Recibir otra cosa</button>
+  </section>
+
+  <canvas id="canvas" hidden></canvas>
+  <script src="jsqr.js"></script>
+  <script src="ot2.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
