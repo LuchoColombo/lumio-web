@@ -52,7 +52,7 @@
     .progressFill { height: 100%; width: 0%; background: #4ecdc4; border-radius: 4px; transition: width .2s; }
     #scanStatus { color: #999; font-size: 14px; margin-top: 10px; text-align: center; }
     /* transmit */
-    #qrWrap { background: #fff; border-radius: 16px; padding: 20px; margin-top: 28px; }
+    #qrWrap, #apkQrWrap { background: #fff; border-radius: 16px; padding: 20px; margin-top: 28px; }
     #qrCanvas { display: block; }
     #txCounter { color: #666; font-size: 17px; font-weight: 600; margin-top: 14px; }
     #txHint { color: #999; font-size: 14px; margin-top: 6px; text-align: center; }
@@ -79,7 +79,7 @@
     <div class="spacer"></div>
     <button id="btnGoSend" class="btn">📤 Enviar desde esta compu</button>
     <button id="btnStart" class="btn secondary">📥 Recibir con la cámara</button>
-    <a class="btn secondary" href="lumio.apk" download>⬇️ Descargar la app (Android)</a>
+    <button id="btnGoApp" class="btn secondary">⬇️ Descargar la app (Android)</button>
     <p class="hint">
       Todo viaja por luz entre pantalla y cámara: nada pasa por internet ni por servidores.
     </p>
@@ -139,6 +139,25 @@
       <button class="speedBtn" data-ms="180">Rápido</button>
       <button class="speedBtn" data-ms="100">Turbo</button>
     </div>
+  </section>
+
+  <!-- Descargar la app -->
+  <section id="screen-app" class="screen">
+    <div class="topbar">
+      <button class="backLink" data-back>← Atrás</button>
+      <span class="titleSm">Descargar la app</span>
+      <span style="width:60px"></span>
+    </div>
+    <div id="apkQrWrap"><canvas id="apkQrCanvas"></canvas></div>
+    <p class="tagline" style="margin-top:18px">
+      Escaneá este código con la cámara del teléfono:<br />se le abre la descarga
+      del APK<span id="apkSize"></span>.
+    </p>
+    <a id="btnApkDownload" class="btn" href="lumio.apk" download>⬇️ Descargar en este dispositivo</a>
+    <p class="hint">
+      Al abrir el archivo descargado, Android va a pedir permiso para instalar apps
+      de origen desconocido. Es normal: el APK no pasa por Play Store.
+    </p>
   </section>
 
   <!-- Recibir: escaneo -->

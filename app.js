@@ -9,6 +9,7 @@
     transmit: $('screen-transmit'),
     scan: $('screen-scan'),
     result: $('screen-result'),
+    app: $('screen-app'),
   };
 
   function show(name) {
@@ -379,8 +380,43 @@
     show('result');
   }
 
+  // ============ DESCARGAR LA APP ============
+
+  // The QR carries the absolute APK URL so a phone scanning it from this
+  // screen lands straight on the download; the button below covers the case
+  // of someone already browsing on the phone they want to install on.
+  let apkQrDrawn = false;
+
+  async function showAppScreen() {
+    show('app');
+    if (apkQrDrawn) return;
+
+    const apkUrl = new URL('lumio.apk', location.href).href;
+    try {
+      await QRCode.toCanvas($('apkQrCanvas'), apkUrl, {
+        errorCorrectionLevel: 'M',
+        width: Math.min(260, Math.floor(window.innerWidth * 0.7)),
+        margin: 0,
+      });
+      apkQrDrawn = true;
+    } catch (e) {
+      // Leave the direct download button as the fallback path.
+    }
+
+    try {
+      const head = await fetch(apkUrl, { method: 'HEAD' });
+      const bytes = parseInt(head.headers.get('content-length'), 10);
+      if (bytes > 0) {
+        $('apkSize').textContent = ' (' + (bytes / (1024 * 1024)).toFixed(0) + ' MB)';
+      }
+    } catch (e) {
+      // Size is a nicety; skip it if the request fails.
+    }
+  }
+
   // ============ WIRING ============
 
+  $('btnGoApp').onclick = showAppScreen;
   $('btnGoSend').onclick = () => show('send');
   $('btnStart').onclick = startScan;
   $('btnAgain').onclick = startScan;
