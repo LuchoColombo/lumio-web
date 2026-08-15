@@ -1,11 +1,16 @@
-// Lumio Web — browser port of the OT2 fountain decoder.
+// Lumio Web — browser port of the OT3 fountain decoder.
 // Must stay protocol-compatible with src/lib/fountain.ts in the app:
-// frame format OT2:<sid>:<k>:<len>:<crc>:<seed>:<flags>:<base64>,
+// frame format OT3:<SID>:<k>:<len>:<CRC>:<seed>:<FLAGS>:<base45>,
 // same PRNG, same degree distribution, same CRC32.
 (function (global) {
   'use strict';
 
-  const BLOCK_SIZE = 420;
+  // Mirrors the app: small payloads use handheld-friendly QRs, big ones
+  // use denser frames. The receiver reads the block size off each frame.
+  const BLOCK_SIZE_SMALL = 560;
+  const BLOCK_SIZE_BIG = 1450;
+  const BIG_PAYLOAD_MIN = 8 * 1024;
+  const MAX_BLOCK_SIZE = 2000;
 
   // --- deterministic PRNG (identical to the app's mulberry32) ---
   function mulberry32(seed) {
@@ -49,6 +54,56 @@
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     return bytes;
+  }
+
+  // --- base45 (RFC 9285) — must mirror bytesToB45/b45ToBytes in the app ---
+  const B45_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:';
+  const B45_REVERSE = {};
+  for (let i = 0; i < B45_ALPHABET.length; i++) B45_REVERSE[B45_ALPHABET[i]] = i;
+
+  function bytesToB45(bytes) {
+    let out = '';
+    let i = 0;
+    for (; i + 1 < bytes.length; i += 2) {
+      let v = bytes[i] * 256 + bytes[i + 1];
+      const e = Math.floor(v / 2025);
+      v -= e * 2025;
+      const d = Math.floor(v / 45);
+      out += B45_ALPHABET[v - d * 45] + B45_ALPHABET[d] + B45_ALPHABET[e];
+    }
+    if (i < bytes.length) {
+      const v = bytes[i];
+      const d = Math.floor(v / 45);
+      out += B45_ALPHABET[v - d * 45] + B45_ALPHABET[d];
+    }
+    return out;
+  }
+
+  function b45ToBytes(s) {
+    const n = s.length;
+    if (n % 3 === 1) throw new Error('invalid base45 length');
+    const out = new Uint8Array(Math.floor(n / 3) * 2 + (n % 3 === 2 ? 1 : 0));
+    let o = 0;
+    let i = 0;
+    for (; i + 2 < n; i += 3) {
+      const c = B45_REVERSE[s[i]];
+      const d = B45_REVERSE[s[i + 1]];
+      const e = B45_REVERSE[s[i + 2]];
+      if (c === undefined || d === undefined || e === undefined) throw new Error('bad base45 char');
+      const v = c + d * 45 + e * 2025;
+      if (v > 0xffff) throw new Error('base45 overflow');
+      out[o++] = v >> 8;
+      out[o++] = v & 0xff;
+    }
+    if (i < n) {
+      const c = B45_REVERSE[s[i]];
+      const d = B45_REVERSE[s[i + 1]];
+      if (c === undefined || d === undefined) throw new Error('bad base45 char');
+      const v = c + d * 45;
+      if (v > 0xff) throw new Error('base45 overflow');
+      out[o++] = v;
+    }
+    return out;
   }
 
   function frameIndices(seed, k) {
@@ -119,24 +174,34 @@
   }
 
   function parseFountainFrame(raw) {
-    if (!raw.startsWith('OT2:')) return null;
-    const parts = raw.split(':');
-    if (parts.length !== 8) return null;
+    if (!raw.startsWith('OT3:')) return null;
+
+    // ':' is a valid base45 character, so the payload may contain colons and
+    // cannot be split blindly. The seven header fields are colon-free, so walk
+    // to the seventh separator and treat everything past it as payload.
+    let cut = -1;
+    for (let n = 0; n < 7; n++) {
+      cut = raw.indexOf(':', cut + 1);
+      if (cut === -1) return null;
+    }
+    const parts = raw.slice(0, cut).split(':');
+    if (parts.length !== 7) return null;
+    const payload = raw.slice(cut + 1);
 
     const sid = parts[1];
     const k = parseInt(parts[2], 10);
     const len = parseInt(parts[3], 10);
     const crc = parseInt(parts[4], 36);
     const seed = parseInt(parts[5], 10);
-    const flags = parts[6];
+    const flags = parts[6].toLowerCase();
     const type = flags[0];
     const compressed = flags.length > 1 && flags[1] === 'z';
     if (!sid || isNaN(k) || isNaN(len) || isNaN(crc) || isNaN(seed)) return null;
     if (type !== 't' && type !== 'i' && type !== 'f') return null;
 
     try {
-      const data = b64ToBytes(parts[7]);
-      if (data.length !== BLOCK_SIZE) return null;
+      const data = b45ToBytes(payload);
+      if (data.length < 1 || data.length > MAX_BLOCK_SIZE) return null;
       return { sid, k, len, crc, seed, type, compressed, data };
     } catch (e) {
       return null;
@@ -156,6 +221,7 @@
       this.len = 0;
       this.crc = 0;
       this.compressed = false;
+      this.blockSize = 0;
       this.blocks = new Map();
       this.pending = [];
       this.seenSeeds = new Set();
@@ -166,9 +232,12 @@
     }
 
     addFrame(frame) {
-      if (this.sid && frame.sid !== this.sid) this.reset();
+      if (this.sid && (frame.sid !== this.sid || frame.data.length !== this.blockSize)) {
+        this.reset();
+      }
 
       this.sid = frame.sid;
+      this.blockSize = frame.data.length;
       this.k = frame.k;
       this.len = frame.len;
       this.crc = frame.crc;
@@ -188,8 +257,8 @@
       const bytes = new Uint8Array(this.len);
       for (let i = 0; i < this.k; i++) {
         const block = this.blocks.get(i);
-        const offset = i * BLOCK_SIZE;
-        bytes.set(block.slice(0, Math.min(BLOCK_SIZE, this.len - offset)), offset);
+        const offset = i * this.blockSize;
+        bytes.set(block.slice(0, Math.min(this.blockSize, this.len - offset)), offset);
       }
 
       if (crc32(bytes) !== this.crc) {
@@ -269,18 +338,22 @@
       // uncompressed fallback
     }
 
-    const flags = type + (compressed ? 'z' : '');
-    const k = Math.max(1, Math.ceil(bytes.length / BLOCK_SIZE));
+    // Uppercase keeps the frame in QR alphanumeric mode; parsed back to
+    // lowercase on the receiving side.
+    const flags = (type + (compressed ? 'z' : '')).toUpperCase();
+    const blockSize = bytes.length >= BIG_PAYLOAD_MIN ? BLOCK_SIZE_BIG : BLOCK_SIZE_SMALL;
+    const k = Math.max(1, Math.ceil(bytes.length / blockSize));
 
     const blocks = [];
     for (let i = 0; i < k; i++) {
-      const block = new Uint8Array(BLOCK_SIZE);
-      block.set(bytes.slice(i * BLOCK_SIZE, (i + 1) * BLOCK_SIZE));
+      const block = new Uint8Array(blockSize);
+      block.set(bytes.slice(i * blockSize, (i + 1) * blockSize));
       blocks.push(block);
     }
 
-    const sid = Math.random().toString(36).slice(2, 7);
-    const headerPrefix = 'OT2:' + sid + ':' + k + ':' + bytes.length + ':' + crc32(bytes).toString(36);
+    const sid = Math.random().toString(36).slice(2, 7).toUpperCase();
+    const crc = (crc32(bytes) >>> 0).toString(36).toUpperCase();
+    const headerPrefix = 'OT3:' + sid + ':' + k + ':' + bytes.length + ':' + crc;
 
     const firstCycleRepairs = [];
     let maxSeed = k - 1;
@@ -308,11 +381,11 @@
       else if (cycle === 0) seed = firstCycleRepairs[pos - k];
       else seed = freshSeedBase + (cycle - 1) * (cycleLength - k) + (pos - k);
 
-      const data = new Uint8Array(BLOCK_SIZE);
+      const data = new Uint8Array(blockSize);
       for (const idx of frameIndices(seed, k)) {
         xorInto(data, blocks[idx]);
       }
-      return headerPrefix + ':' + seed + ':' + flags + ':' + bytesToB64(data);
+      return headerPrefix + ':' + seed + ':' + flags + ':' + bytesToB45(data);
     }
 
     return { k, cycleLength, frameAt };
@@ -326,7 +399,9 @@
     unpackFilePayload,
     utf8Decode,
     utf8Encode,
-    BLOCK_SIZE,
+    BLOCK_SIZE_SMALL,
+    BLOCK_SIZE_BIG,
+    BIG_PAYLOAD_MIN,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = OT2;
   else global.OT2 = OT2;

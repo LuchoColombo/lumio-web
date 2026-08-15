@@ -145,24 +145,27 @@
     }
   }
 
-  // Arbitrary files go out as-is (type 'f', filename embedded). Every KB
-  // costs ~2 QR codes, so big files belong to the Wi-Fi flow instead.
+  // Arbitrary files go out as-is (type 'f', filename embedded). No size
+  // cap, but QR throughput is what it is: past a threshold we tell the
+  // user honestly how long it'll take and point at the Wi-Fi flow.
   const FILE_WARN_SIZE = 100 * 1024;
-  const FILE_MAX_SIZE = 512 * 1024;
+
+  // Rough ETA: dense blocks, ~1.3x k frames needed, Turbo at 10 codes/s.
+  function qrEtaMinutes(size) {
+    const blockSize = size >= OT2.BIG_PAYLOAD_MIN ? OT2.BLOCK_SIZE_BIG : OT2.BLOCK_SIZE_SMALL;
+    const frames = Math.ceil(size / blockSize) * 1.3;
+    return Math.max(1, Math.ceil(frames / 10 / 60));
+  }
 
   async function handlePickAnyFile(file) {
     $('sendErr').textContent = '';
-    if (file.size > FILE_MAX_SIZE) {
-      $('sendErr').textContent =
-        'Ese archivo es muy pesado para QR (máx. 512 KB). Usá la opción de ' +
-        'Wi-Fi: en el celu, Lumio → Recibir desde la compu.';
-      return;
-    }
     if (file.size > FILE_WARN_SIZE) {
-      const mins = Math.ceil((Math.ceil(file.size / 420) * 1.5 * 0.3) / 60);
+      const mins = qrEtaMinutes(file.size);
       const ok = window.confirm(
-        'El archivo pesa ' + Math.round(file.size / 1024) + ' KB: la transferencia ' +
-        'puede tardar ~' + mins + ' min. ¿Transmitir igual?',
+        'El archivo pesa ' + (file.size / (1024 * 1024)).toFixed(1) + ' MB. Por QR va a ' +
+        'tardar ~' + mins + ' min como mínimo (en modo Turbo, con el celu apoyado y quieto). ' +
+        'Para archivos pesados es mucho más rápido por Wi-Fi: en el celu, ' +
+        'Lumio → Recibir desde la compu.\n\n¿Transmitir por QR igual?',
       );
       if (!ok) return;
     }
@@ -294,8 +297,9 @@
       return;
     }
 
-    // Unparseable OT2 frame (newer protocol?): don't treat it as plain text.
-    if (raw.startsWith('OT2:') || raw.startsWith('OT:')) return;
+    // Unparseable fountain frame (newer protocol, or a pre-base45 OT2 sender):
+    // don't treat it as plain text.
+    if (raw.startsWith('OT3:') || raw.startsWith('OT2:') || raw.startsWith('OT:')) return;
 
     stopScan();
     showResult({ type: 't', bytes: new TextEncoder().encode(raw) });
