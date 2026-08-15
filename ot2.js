@@ -10,7 +10,9 @@
   const BLOCK_SIZE_SMALL = 560;
   const BLOCK_SIZE_BIG = 1450;
   const BIG_PAYLOAD_MIN = 8 * 1024;
-  const MAX_BLOCK_SIZE = 2000;
+  // Payloads at or under this ship as one static v40 code — see fountain.ts.
+  const BLOCK_SIZE_SINGLE = 2800;
+  const MAX_BLOCK_SIZE = 2900;
 
   // --- deterministic PRNG (identical to the app's mulberry32) ---
   function mulberry32(seed) {
@@ -341,7 +343,12 @@
     // Uppercase keeps the frame in QR alphanumeric mode; parsed back to
     // lowercase on the receiving side.
     const flags = (type + (compressed ? 'z' : '')).toUpperCase();
-    const blockSize = bytes.length >= BIG_PAYLOAD_MIN ? BLOCK_SIZE_BIG : BLOCK_SIZE_SMALL;
+    const blockSize =
+      bytes.length <= BLOCK_SIZE_SINGLE
+        ? Math.max(1, bytes.length)
+        : bytes.length >= BIG_PAYLOAD_MIN
+          ? BLOCK_SIZE_BIG
+          : BLOCK_SIZE_SMALL;
     const k = Math.max(1, Math.ceil(bytes.length / blockSize));
 
     const blocks = [];
@@ -401,6 +408,7 @@
     utf8Encode,
     BLOCK_SIZE_SMALL,
     BLOCK_SIZE_BIG,
+    BLOCK_SIZE_SINGLE,
     BIG_PAYLOAD_MIN,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = OT2;
